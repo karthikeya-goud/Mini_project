@@ -2,41 +2,23 @@ import cv2
 import numpy as np
 import os
 
-def apply_clahe_to_frame(frame):
+def resize_and_normalize_frame(frame, target_size=(224, 224)):
     """
-    Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to enhance visibility
-    in low-light (night-time) frames.
+    Resize and normalize the frame.
     """
-    # Convert to LAB color space
-    lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
-    l, a, b = cv2.split(lab)
+    # Resize the frame
+    resized_frame = cv2.resize(frame, target_size)
     
-    # Apply CLAHE to the L channel (luminance)
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-    cl = clahe.apply(l)
+    # Normalize the frame: Scale pixel values to the range [0, 1]
+    normalized_frame = resized_frame / 255.0  # Normalize to [0, 1]
     
-    # Merge the enhanced L channel back with the A and B channels
-    enhanced_lab = cv2.merge((cl, a, b))
-    
-    # Convert back to BGR
-    enhanced_frame = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
-    return enhanced_frame
+    return normalized_frame
 
-def calculate_optical_flow_magnitude(prev_frame, current_frame):
-    """
-    Calculate the optical flow magnitude between two consecutive frames.
-    Optical flow helps measure the amount of motion between frames.
-    """
-    # Calculate optical flow using Farneback method
-    flow = cv2.calcOpticalFlowFarneback(prev_frame, current_frame, None, 0.5, 3, 15, 3, 5, 1.2, 0)
-    magnitude, _ = cv2.cartToPolar(flow[..., 0], flow[..., 1])  # Convert flow vectors to polar coordinates
-    return np.sum(magnitude)  # Sum the magnitude values to get the total motion change
-
-def extract_significant_frames_with_motion_diff(video_path, total_frames_to_extract=60, fps_required=30, apply_clahe=False):
+def extract_significant_frames_with_motion_diff(video_path, total_frames_to_extract=90, fps_required=30, apply_clahe=False):
     """
     This function reads a video, calculates the motion difference between consecutive frames,
-    and selects a total of 60 frames centered around the frame with the highest motion difference.
-    It also checks for FPS and ensures the video has more than 60 frames.
+    and selects a total of 90 frames centered around the frame with the highest motion difference.
+    It also checks for FPS and ensures the video has more than 90 frames.
     Optionally applies CLAHE for night-time video enhancement.
     """
     video = cv2.VideoCapture(video_path)
@@ -47,10 +29,10 @@ def extract_significant_frames_with_motion_diff(video_path, total_frames_to_extr
         print(f"Skipping {video_path}: FPS is {fps}, expected {fps_required}.")
         return None
 
-    # Get total number of frames and ensure there are more than 60 frames
+    # Get total number of frames and ensure there are more than 90 frames
     total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
-    if total_frames <= 60:
-        print(f"Skipping {video_path}: Video has only {total_frames} frames, requires more than 60 frames.")
+    if total_frames <= 90:
+        print(f"Skipping {video_path}: Video has only {total_frames} frames, requires more than 90 frames.")
         return None
 
     prev_frame = None
@@ -77,6 +59,10 @@ def extract_significant_frames_with_motion_diff(video_path, total_frames_to_extr
     video.release()
 
     # Find the frame with the maximum motion difference
+    if not motion_differences:
+        print(f"No motion differences found for {video_path}.")
+        return None
+
     max_motion_frame = max(motion_differences, key=lambda x: x[1])  # x[1] is the motion difference value
 
     # Get the index of the frame with the highest motion difference
@@ -101,7 +87,9 @@ def extract_significant_frames_with_motion_diff(video_path, total_frames_to_extr
     for i in range(start_frame, end_frame + 1):
         ret, frame = video.read()
         if ret:
-            selected_frames.append(frame)
+            # Resize and normalize each frame
+            processed_frame = resize_and_normalize_frame(frame)
+            selected_frames.append(processed_frame)
         else:
             break
 
@@ -114,20 +102,26 @@ def save_frames_to_npy(frames, output_npy_path):
     Save the selected frames to an output .npy file.
     """
     if not frames:
-        print("No frames to save.")
+        print(f"No frames to save for {output_npy_path}.")
         return
 
     # Convert frames list to a numpy array
     frames_array = np.array(frames)
 
-    # Save to .npy file
-    np.save(output_npy_path, frames_array)
-    print(f"Frames saved at: {output_npy_path}")
+    # Print the shape of the array before saving
+    print(f"Saving frames with shape: {frames_array.shape} at {output_npy_path}")
 
-def process_videos_in_directory(input_dir, output_dir, total_frames_to_extract=60, fps_required=30, apply_clahe=False, videos_per_folder=None):
+    # Save to .npy file
+    try:
+        np.save(output_npy_path, frames_array)
+        print(f"Frames saved at: {output_npy_path}")
+    except Exception as e:
+        print(f"Error saving frames: {e}")
+
+def process_videos_in_directory(input_dir, output_dir, total_frames_to_extract=90, fps_required=30, apply_clahe=False, videos_per_folder=None):
     """
-    Process all videos in a directory, extract exactly 60 frames around the highest motion change
-    for each video, and save the frames to .npy files in the corresponding output directory.
+    Process all videos in a directory, extract exactly 90 frames around the highest motion change
+    for each video, resize and normalize the frames, and save the frames to .npy files in the corresponding output directory.
     """
     # Iterate over each action class folder
     for class_folder in os.listdir(input_dir):
@@ -151,12 +145,13 @@ def process_videos_in_directory(input_dir, output_dir, total_frames_to_extract=6
 
             print(f"Processing {video_file}...")
 
-            # Extract exactly 60 frames around the largest motion difference
+            # Extract exactly 90 frames around the largest motion difference
             significant_frames = extract_significant_frames_with_motion_diff(video_path, total_frames_to_extract, fps_required, apply_clahe)
 
-            # If the video is valid (i.e., has the correct FPS and more than 60 frames), save the frames
+            # If the video is valid (i.e., has the correct FPS and more than 90 frames), save the frames
             if significant_frames is not None:
                 output_npy_path = os.path.join(class_output_dir, f"{video_file.replace('.mp4', '')}_frames_{total_frames_to_extract}.npy")
+                print(f"Saving frames for {video_file} to {output_npy_path}")
                 save_frames_to_npy(significant_frames, output_npy_path)
 
                 # Free memory after processing
@@ -171,4 +166,4 @@ videos_per_folder = 3  # Specify the number of videos to process per folder (e.g
 
 # Process all videos in the dataset and store the extracted frames as .npy files
 # Set apply_clahe=True to apply CLAHE enhancement for night-time videos
-process_videos_in_directory(input_dir, output_dir, total_frames_to_extract=60, fps_required=30, apply_clahe=True, videos_per_folder=videos_per_folder)
+process_videos_in_directory(input_dir, output_dir, total_frames_to_extract=90, fps_required=30, apply_clahe=True, videos_per_folder=videos_per_folder)
