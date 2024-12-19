@@ -1,108 +1,140 @@
 import cv2
+import numpy as np
+import os
+
+def calculate_optical_flow_magnitude(prev_frame, current_frame):
+    """
+    Calculate the optical flow magnitude between two consecutive frames.
+    """
+    flow = cv2.calcOpticalFlowFarneback(prev_frame, current_frame, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+    magnitude, _ = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+    return np.sum(magnitude)
+
+def extract_significant_frames_with_motion_diff(video_path, num_frames_before=15, num_frames_after=15):
+    """
+    This function reads a video, calculates the motion difference between consecutive frames,
+    and selects frames around the largest motion difference.
+    """
+    video = cv2.VideoCapture(video_path)
+    total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    prev_frame = None
+    motion_differences = []
+
+    # Loop through frames to calculate optical flow and motion differences
+    for i in range(1, total_frames):
+        ret, frame = video.read()
+        if not ret:
+            break
+        
+        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+        if prev_frame is not None:
+            # Calculate motion difference (optical flow magnitude change)
+            motion_diff = calculate_optical_flow_magnitude(prev_frame, gray_frame)
+            motion_differences.append((i, motion_diff))
+
+        prev_frame = gray_frame
+
+    video.release()
+
+    # Find the frame with the maximum motion difference
+    max_motion_frame = max(motion_differences, key=lambda x: x[1])
+
+    # Get the index of the frame with the highest motion difference
+    max_frame_index = max_motion_frame[0]
+
+    # Calculate the start and end indices for the window of frames around the maximum motion frame
+    start_frame = max_frame_index - num_frames_before
+    end_frame = max_frame_index + num_frames_after
+
+    # Ensure the frames are within the valid range
+    start_frame = max(0, start_frame)
+    end_frame = min(total_frames - 1, end_frame)
+
+    # Collect the frames within the window
+    selected_frames = []
+    video = cv2.VideoCapture(video_path)
+    video.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    
+    for i in range(start_frame, end_frame + 1):
+        ret, frame = video.read()
+        if ret:
+            selected_frames.append(frame)
+        else:
+            break
+
+    video.release()
+
+    return selected_frames
+
+def process_dataset(dataset_path, output_path, num_frames_before=15, num_frames_after=15):
+    """
+    Process the entire dataset, extracts frames around the highest motion change for each video,
+    and saves the frames to disk.
+    """
+    os.makedirs(output_path, exist_ok=True)
+
+    for label_folder in os.listdir(dataset_path):
+        label_folder_path = os.path.join(dataset_path, label_folder)
+
+        if os.path.isdir(label_folder_path):
+            label_output_path = os.path.join(output_path, label_folder)
+            os.makedirs(label_output_path, exist_ok=True)
+
+            for video_name in os.listdir(label_folder_path):
+                video_path = os.path.join(label_folder_path, video_name)
+
+                if os.path.isfile(video_path) and video_path.endswith('.mp4'):
+                    print(f"Processing {video_name}...")
+
+                    # Extract frames around the largest motion difference
+                    significant_frames = extract_significant_frames_with_motion_diff(video_path, num_frames_before, num_frames_after)
+
+                    # Save the selected frames for LSTM input (directly store in the label folder)
+                    output_video_path = os.path.join(label_output_path, f"{video_name.replace('.mp4', '')}_frames.npy")
+                    np.save(output_video_path, np.array(significant_frames))
+
+                    # Free memory after processing
+                    del significant_frames
+
+    print("Dataset processing complete!")
+
+# Example usage:
+dataset_path = 'path_to_your_dataset'  # Path to your dataset
+output_path = 'path_to_output_folder'  # Path to store processed frames
+
+process_dataset(dataset_path, output_path, num_frames_before=15, num_frames_after=15)
+
+
+
+
+
 import os
 import numpy as np
 
-def preprocess_videos_with_overlap_and_padding(file_paths, output_folder, max_duration=16, window_duration=1, overlap_duration=0.5, fps=30):
-    """
-    Preprocess a list of videos by:
-    - Truncating videos longer than `max_duration`.
-    - Padding videos shorter than `max_duration`.
-    - Extracting overlapping windows and padding when the video ends early.
-    - Ensuring no file overwriting by using unique names for each window.
-    
-    :param file_paths: List of input video file paths.
-    :param output_folder: Path where preprocessed video chunks will be saved.
-    :param max_duration: Max duration of the video in seconds (default is 16 seconds).
-    :param window_duration: Duration of each window to extract in seconds (default is 1 second).
-    :param overlap_duration: Duration of overlap between consecutive windows in seconds (default is 0.5 second).
-    :param fps: Frames per second for the video (default is 30fps).
-    """
-    
-    # Create the output directory if it doesn't exist
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
-    
-    for video_path in file_paths:
-        # Open the video file
-        cap = cv2.VideoCapture(video_path)
-        
-        # Get video properties
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        video_fps = cap.get(cv2.CAP_PROP_FPS)
-        video_duration = total_frames / video_fps  # Duration of the video in seconds
-        
-        # Calculate the number of frames per window and the overlap in frames
-        window_frames = int(window_duration * fps)
-        overlap_frames = int(overlap_duration * fps)
-        
-        # Determine the number of windows we can extract from the video
-        num_windows = int((min(video_duration, max_duration) - window_duration) // (window_duration - overlap_duration) + 1)
-        
-        # Get the base name of the video file (without path or extension)
-        base_name = os.path.splitext(os.path.basename(video_path))[0]
-        
-        frame_count = 0
-        window_idx = 0
-        
-        while True:
-            # Extract frames for each window
-            frames = []
-            
-            # Read frames for the window
-            for _ in range(window_frames):
-                ret, frame = cap.read()
-                if not ret:  # If we reach the end of the video
-                    break
-                frames.append(frame)
+def load_data(dataset_root):
+    data = []
+    labels = []
 
-            if len(frames) < window_frames:
-                # Padding if the video ends before the window is complete
-                padding_frames = window_frames - len(frames)
-                last_frame = frames[-1] if frames else np.zeros_like(frame)  # Use the last frame or create a black frame
-                frames.extend([last_frame] * padding_frames)
-            
-            # Generate a unique filename for this window
-            window_output_path = os.path.join(output_folder, f"{base_name}_window_{window_idx+1}.mp4")
-            
-            # Ensure unique file name if file already exists (e.g., if filenames might collide)
-            counter = 1
-            while os.path.exists(window_output_path):
-                window_output_path = os.path.join(output_folder, f"{base_name}_window_{window_idx+1}_{counter}.mp4")
-                counter += 1
+    # Iterate through each action class folder
+    for class_name in os.listdir(dataset_root):
+        class_folder = os.path.join(dataset_root, class_name)
+        if os.path.isdir(class_folder):
+            # Iterate through each video file in the class folder
+            for video_file in os.listdir(class_folder):
+                video_file_path = os.path.join(class_folder, video_file)
+                if os.path.isfile(video_file_path) and video_file.endswith('_frames.npy'):
+                    # Load the frames (numpy array)
+                    frames = np.load(video_file_path)
 
-            # Save the window of frames as a video file
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(window_output_path, fourcc, video_fps, (frames[0].shape[1], frames[0].shape[0]))
+                    # Append frames and their corresponding label (action class)
+                    data.append(frames)
+                    labels.append(class_name)  # The action class is the label
 
-            # Write frames to the video file
-            for frame in frames:
-                out.write(frame)
+    return np.array(data), np.array(labels)
 
-            out.release()
-            window_idx += 1
-            
-            # Shift the window by overlap_frames (overlap is 50% by default)
-            frame_count += window_frames - overlap_frames
-            
-            # Break the loop if we have processed enough windows
-            if frame_count >= total_frames or window_idx >= num_windows:
-                break
-
-        cap.release()
-        print(f"Preprocessing completed for {video_path}, saved to {output_folder}.")
-
-# Example usage:
-file_paths = [
-    'path_to_video1.mp4',  # Replace with the path to your first video
-    'path_to_video2.mp4',  # Replace with the path to your second video
-    # Add more video paths as needed
-]
-output_folder = 'output_folder'  # Folder where the processed windows will be saved
-
-# Call the function with the desired max duration, window size, overlap, and fps
-max_duration = 16  # Maximum duration of video in seconds
-window_duration = 1  # Duration of each window in seconds (1 second per window)
-overlap_duration = 0.5  # Overlap duration in seconds (50% overlap)
-fps = 30  # Frames per second
-
-preprocess_videos_with_overlap_and_padding(file_paths, output_folder, max_duration=max_duration, window_duration=window_duration, overlap_duration=overlap_duration, fps=fps)
+# Example usage
+dataset_root = 'path_to_your_dataset'  # Replace with the actual path
+data, labels = load_data(dataset_root)
+print(data.shape, labels.shape)
