@@ -138,3 +138,140 @@ def load_data(dataset_root):
 dataset_root = 'path_to_your_dataset'  # Replace with the actual path
 data, labels = load_data(dataset_root)
 print(data.shape, labels.shape)
+
+
+
+import cv2
+import numpy as np
+import os
+
+def calculate_optical_flow_magnitude(prev_frame, current_frame):
+    """
+    Calculate the optical flow magnitude between two consecutive frames.
+    Optical flow helps measure the amount of motion between frames.
+    """
+    # Calculate optical flow using Farneback method
+    flow = cv2.calcOpticalFlowFarneback(prev_frame, current_frame, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+    magnitude, _ = cv2.cartToPolar(flow[..., 0], flow[..., 1])  # Convert flow vectors to polar coordinates
+    return np.sum(magnitude)  # Sum the magnitude values to get the total motion change
+
+def extract_significant_frames_with_motion_diff(video_path, total_frames_to_extract=60):
+    """
+    This function reads a video, calculates the motion difference between consecutive frames,
+    and selects a total of 60 frames centered around the frame with the highest motion difference.
+    """
+    video = cv2.VideoCapture(video_path)
+    total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    prev_frame = None
+    motion_differences = []
+
+    # Loop through frames to calculate optical flow and motion differences
+    for i in range(1, total_frames):
+        ret, frame = video.read()
+        if not ret:
+            break
+        
+        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+        if prev_frame is not None:
+            # Calculate motion difference (optical flow magnitude change)
+            motion_diff = calculate_optical_flow_magnitude(prev_frame, gray_frame)
+            motion_differences.append((i, motion_diff))  # Store the frame index and its motion difference
+
+        prev_frame = gray_frame
+
+    video.release()
+
+    # Find the frame with the maximum motion difference
+    max_motion_frame = max(motion_differences, key=lambda x: x[1])  # x[1] is the motion difference value
+
+    # Get the index of the frame with the highest motion difference
+    max_frame_index = max_motion_frame[0]
+
+    # Calculate the start and end indices for the window of frames around the maximum motion frame
+    # We need exactly 60 frames, centered around the max motion frame
+    num_frames_before = (total_frames_to_extract - 1) // 2
+    num_frames_after = total_frames_to_extract - num_frames_before - 1
+
+    start_frame = max_frame_index - num_frames_before
+    end_frame = max_frame_index + num_frames_after
+
+    # Ensure the frames are within the valid range
+    start_frame = max(0, start_frame)
+    end_frame = min(total_frames - 1, end_frame)
+
+    # Collect the frames within the window
+    selected_frames = []
+    video = cv2.VideoCapture(video_path)
+    video.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    
+    for i in range(start_frame, end_frame + 1):
+        ret, frame = video.read()
+        if ret:
+            selected_frames.append(frame)
+        else:
+            break
+
+    video.release()
+
+    return selected_frames
+
+def save_frames_to_video(frames, output_video_path, frame_rate=30):
+    """
+    Save the selected frames to an output video file in .mp4 format.
+    """
+    if not frames:
+        print("No frames to save.")
+        return
+
+    # Get the dimensions of the frames (assuming all frames have the same shape)
+    height, width, _ = frames[0].shape
+
+    # Initialize the video writer
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # 'mp4v' codec for .mp4 files
+    out = cv2.VideoWriter(output_video_path, fourcc, frame_rate, (width, height))
+
+    # Write frames to the video file
+    for frame in frames:
+        out.write(frame)
+
+    out.release()
+    print(f"Video saved at: {output_video_path}")
+
+def process_test_videos(video_paths, output_path, total_frames_to_extract=60, frame_rate=30):
+    """
+    Process a specific list of test videos, extract exactly 60 frames around the highest motion change
+    for each video, and save the frames to disk in .mp4 format.
+    """
+    os.makedirs(output_path, exist_ok=True)
+
+    for video_path in video_paths:
+        video_name = os.path.basename(video_path)  # Extract video name from path
+        print(f"Processing {video_name}...")
+
+        # Extract exactly 60 frames around the largest motion difference
+        significant_frames = extract_significant_frames_with_motion_diff(video_path, total_frames_to_extract)
+
+        # Save the selected frames as a new video (in .mp4 format)
+        output_video_path = os.path.join(output_path, f"{video_name.replace('.mp4', '')}_frames_{total_frames_to_extract}.mp4")
+        save_frames_to_video(significant_frames, output_video_path, frame_rate)
+
+        # Free memory after processing
+        del significant_frames
+
+    print("Testing complete!")
+
+# Example usage with 3 specific test video paths:
+video_paths = [
+    'path_to_video_1/video_1.mp4',  # Replace with actual video path
+    'path_to_video_2/video_2.mp4',  # Replace with actual video path
+    'path_to_video_3/video_3.mp4'   # Replace with actual video path
+]
+
+output_path = 'path_to_output_folder'  # Path to store processed videos
+
+# Process the test videos with 60 frames
+process_test_videos(video_paths, output_path, total_frames_to_extract=60, frame_rate=30)
+
+
