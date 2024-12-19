@@ -2,14 +2,15 @@ import cv2
 import os
 import numpy as np
 
-def preprocess_video_with_overlap(input_video_path, output_folder, max_duration=16, window_duration=1, overlap_duration=0.5, fps=30):
+def preprocess_videos_with_overlap_and_padding(file_paths, output_folder, max_duration=16, window_duration=1, overlap_duration=0.5, fps=30):
     """
-    Preprocess a video by:
+    Preprocess a list of videos by:
     - Truncating videos longer than `max_duration`.
     - Padding videos shorter than `max_duration`.
-    - Extracting overlapping windows.
+    - Extracting overlapping windows and padding when the video ends early.
+    - Ensuring no file overwriting by using unique names for each window.
     
-    :param input_video_path: Path to the input video file.
+    :param file_paths: List of input video file paths.
     :param output_folder: Path where preprocessed video chunks will be saved.
     :param max_duration: Max duration of the video in seconds (default is 16 seconds).
     :param window_duration: Duration of each window to extract in seconds (default is 1 second).
@@ -17,66 +18,85 @@ def preprocess_video_with_overlap(input_video_path, output_folder, max_duration=
     :param fps: Frames per second for the video (default is 30fps).
     """
     
-    # Open the video file
-    cap = cv2.VideoCapture(input_video_path)
-    
-    # Get video properties
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    video_fps = cap.get(cv2.CAP_PROP_FPS)
-    video_duration = total_frames / video_fps  # Duration of the video in seconds
-    
-    # Calculate the number of frames per window and the overlap in frames
-    window_frames = int(window_duration * fps)
-    overlap_frames = int(overlap_duration * fps)
-    
-    # Determine the number of windows we can extract from the video
-    num_windows = int((min(video_duration, max_duration) - window_duration) // (window_duration - overlap_duration) + 1)
-    
     # Create the output directory if it doesn't exist
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
+    
+    for video_path in file_paths:
+        # Open the video file
+        cap = cv2.VideoCapture(video_path)
+        
+        # Get video properties
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        video_fps = cap.get(cv2.CAP_PROP_FPS)
+        video_duration = total_frames / video_fps  # Duration of the video in seconds
+        
+        # Calculate the number of frames per window and the overlap in frames
+        window_frames = int(window_duration * fps)
+        overlap_frames = int(overlap_duration * fps)
+        
+        # Determine the number of windows we can extract from the video
+        num_windows = int((min(video_duration, max_duration) - window_duration) // (window_duration - overlap_duration) + 1)
+        
+        # Get the base name of the video file (without path or extension)
+        base_name = os.path.splitext(os.path.basename(video_path))[0]
+        
+        frame_count = 0
+        window_idx = 0
+        
+        while True:
+            # Extract frames for each window
+            frames = []
+            
+            # Read frames for the window
+            for _ in range(window_frames):
+                ret, frame = cap.read()
+                if not ret:  # If we reach the end of the video
+                    break
+                frames.append(frame)
 
-    frame_count = 0
-    window_idx = 0
-    while True:
-        # Extract frames for each window
-        frames = []
-        for _ in range(window_frames):
-            ret, frame = cap.read()
-            if not ret:  # If we reach the end of the video
+            if len(frames) < window_frames:
+                # Padding if the video ends before the window is complete
+                padding_frames = window_frames - len(frames)
+                last_frame = frames[-1] if frames else np.zeros_like(frame)  # Use the last frame or create a black frame
+                frames.extend([last_frame] * padding_frames)
+            
+            # Generate a unique filename for this window
+            window_output_path = os.path.join(output_folder, f"{base_name}_window_{window_idx+1}.mp4")
+            
+            # Ensure unique file name if file already exists (e.g., if filenames might collide)
+            counter = 1
+            while os.path.exists(window_output_path):
+                window_output_path = os.path.join(output_folder, f"{base_name}_window_{window_idx+1}_{counter}.mp4")
+                counter += 1
+
+            # Save the window of frames as a video file
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(window_output_path, fourcc, video_fps, (frames[0].shape[1], frames[0].shape[0]))
+
+            # Write frames to the video file
+            for frame in frames:
+                out.write(frame)
+
+            out.release()
+            window_idx += 1
+            
+            # Shift the window by overlap_frames (overlap is 50% by default)
+            frame_count += window_frames - overlap_frames
+            
+            # Break the loop if we have processed enough windows
+            if frame_count >= total_frames or window_idx >= num_windows:
                 break
-            frames.append(frame)
 
-        if len(frames) < window_frames:
-            # Padding if the video ends before the window is complete
-            padding_frames = window_frames - len(frames)
-            last_frame = frames[-1] if frames else np.zeros_like(frame)
-            frames.extend([last_frame] * padding_frames)
-        
-        # Save the window of frames as an image sequence or video
-        window_output_path = os.path.join(output_folder, f"window_{window_idx+1}.mp4")
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(window_output_path, fourcc, video_fps, (frames[0].shape[1], frames[0].shape[0]))
-
-        # Write frames to the video file
-        for frame in frames:
-            out.write(frame)
-
-        out.release()
-        window_idx += 1
-        
-        # Shift the window by overlap_frames (overlap is 50% by default)
-        frame_count += window_frames - overlap_frames
-        
-        # Break the loop if we have processed enough windows
-        if frame_count >= total_frames or window_idx >= num_windows:
-            break
-
-    cap.release()
-    print(f"Preprocessing completed for {input_video_path}, saved to {output_folder}.")
+        cap.release()
+        print(f"Preprocessing completed for {video_path}, saved to {output_folder}.")
 
 # Example usage:
-input_video_path = 'path_to_your_video.mp4'  # Replace with the path to your video
+file_paths = [
+    'path_to_video1.mp4',  # Replace with the path to your first video
+    'path_to_video2.mp4',  # Replace with the path to your second video
+    # Add more video paths as needed
+]
 output_folder = 'output_folder'  # Folder where the processed windows will be saved
 
 # Call the function with the desired max duration, window size, overlap, and fps
@@ -85,4 +105,4 @@ window_duration = 1  # Duration of each window in seconds (1 second per window)
 overlap_duration = 0.5  # Overlap duration in seconds (50% overlap)
 fps = 30  # Frames per second
 
-preprocess_video_with_overlap(input_video_path, output_folder, max_duration=max_duration, window_duration=window_duration, overlap_duration=overlap_duration, fps=fps)
+preprocess_videos_with_overlap_and_padding(file_paths, output_folder, max_duration=max_duration, window_duration=window_duration, overlap_duration=overlap_duration, fps=fps)
