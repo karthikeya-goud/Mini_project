@@ -1,0 +1,291 @@
+Below is a **detailed description of the system architecture**, its modules, and the project directory structure, along with PlantUML diagrams and other relevant information.
+
+---
+
+## **System Architecture**
+
+The system is a **Django-based web application** that allows users to upload videos, process them using a TensorFlow model for action recognition, and display the results. The architecture is modular, with clear separation of concerns between the frontend, backend, and machine learning components.
+
+---
+
+### **1. System Overview**
+
+The system consists of the following key components:
+
+1. **Frontend**:
+   - Handles user interaction (uploading videos, viewing results).
+   - Uses HTML, CSS, and JavaScript for the user interface.
+
+2. **Backend**:
+   - Built with Django, a Python web framework.
+   - Handles video uploads, database storage, and API endpoints.
+
+3. **Machine Learning Model**:
+   - A TensorFlow model trained to recognize human actions in video frames.
+   - Processes video frames and predicts actions.
+
+4. **Database**:
+   - Stores uploaded videos, metadata (detected actions, confidence scores), and other application data.
+
+5. **Media Storage**:
+   - Stores uploaded video files in the `media/videos/` directory.
+
+---
+
+### **2. Modules**
+
+The system is divided into the following modules:
+
+#### **A. Frontend**
+- **Templates**:
+  - `index.html`: Allows users to upload videos.
+  - `results.html`: Displays the detected action and confidence score for the uploaded video.
+  - `error.html`: Displays error messages.
+- **Static Files**:
+  - `styles.css`: Provides styling for the frontend.
+  - `main.js`: Handles AJAX requests for fetching previous results.
+
+#### **B. Backend**
+- **Models**:
+  - `Video`: Stores uploaded video files.
+  - `Metadata`: Stores detected actions and confidence scores for each video.
+- **Forms**:
+  - `VideoUploadForm`: Handles video upload forms.
+- **Views**:
+  - `index`: Handles video uploads and processes the video.
+  - `results`: Displays the results for a specific video.
+  - `fetch_previous_results`: Fetches and displays previous results via AJAX.
+- **URLs**:
+  - Defines routes for uploading videos, viewing results, and fetching previous results.
+
+#### **C. Machine Learning**
+- **Model**:
+  - A TensorFlow model (`mf.keras`) trained to recognize actions in video frames.
+- **Utility Functions**:
+  - `extract_frames`: Extracts frames from a video.
+  - `predict_action`: Predicts the action from a sequence of frames.
+
+#### **D. Database**
+- Uses SQLite for development and PostgreSQL/MySQL for production.
+- Stores:
+  - Uploaded videos (`Video` model).
+  - Detected actions and confidence scores (`Metadata` model).
+
+#### **E. Media Storage**
+- Stores uploaded video files in the `media/videos/` directory.
+
+---
+
+### **3. Project Directory Structure**
+
+Here’s the detailed project directory structure:
+
+```
+projectb10/
+├── projectb10/
+│   ├── __init__.py
+│   ├── settings.py
+│   ├── urls.py
+│   └── wsgi.py
+├── recognition/
+│   ├── __init__.py
+│   ├── admin.py
+│   ├── apps.py
+│   ├── forms.py
+│   ├── migrations/
+│   │   ├── __init__.py
+│   │   └── ...
+│   ├── models.py
+│   ├── templates/
+│   │   ├── recognition/
+│   │   │   ├── index.html
+│   │   │   ├── results.html
+│   │   │   └── error.html
+│   ├── urls.py
+│   ├── views.py
+│   ├── utils.py  # Utility functions for frame extraction and prediction
+│   ├── static/
+│   │   ├── css/
+│   │   │   └── styles.css
+│   │   └── js/
+│   │       └── main.js
+│   └── mf.keras  # TensorFlow model
+├── media/
+│   └── videos/  # Uploaded videos will be stored here
+├── db.sqlite3
+├── manage.py
+```
+
+---
+
+### **4. Detailed Module Descriptions**
+
+#### **A. Frontend**
+
+- **Templates**:
+  - `index.html`:
+    - Allows users to upload videos.
+    - Contains a form for video upload and a button to fetch previous results.
+  - `results.html`:
+    - Displays the uploaded video and the detected action with confidence scores.
+  - `error.html`:
+    - Displays error messages (e.g., if a video or metadata is not found).
+
+- **Static Files**:
+  - `styles.css`:
+    - Provides basic styling for the frontend.
+  - `main.js`:
+    - Handles AJAX requests to fetch previous results and dynamically update the UI.
+
+#### **B. Backend**
+
+- **Models**:
+  - `Video`:
+    - Stores uploaded video files (`video_file`).
+    - Tracks the upload timestamp (`uploaded_at`).
+  - `Metadata`:
+    - Stores detected actions (`detected_actions`) and confidence scores (`confidence_scores`) for each video.
+    - Tracks the timestamp (`timestamp`).
+
+- **Forms**:
+  - `VideoUploadForm`:
+    - Handles the video upload form.
+    - Validates the uploaded file.
+
+- **Views**:
+  - `index`:
+    - Handles video uploads.
+    - Processes the video using the TensorFlow model.
+    - Saves the detected action and confidence score to the database.
+  - `results`:
+    - Displays the results for a specific video.
+    - Fetches the video and metadata from the database.
+  - `fetch_previous_results`:
+    - Fetches previous results via AJAX.
+    - Returns a JSON response with video URLs, detected actions, and confidence scores.
+
+- **URLs**:
+  - Defines routes for:
+    - Uploading videos (`/`).
+    - Viewing results (`/results/<int:video_id>/`).
+    - Fetching previous results (`/fetch_previous_results/`).
+
+#### **C. Machine Learning**
+
+- **Model**:
+  - A TensorFlow model (`mf.keras`) trained to recognize actions in video frames.
+  - Input: A sequence of frames (e.g., 40 frames).
+  - Output: Predicted action and confidence score.
+
+- **Utility Functions**:
+  - `extract_frames`:
+    - Extracts frames from a video file.
+    - Resizes and normalizes frames.
+  - `predict_action`:
+    - Predicts the action from a sequence of frames.
+    - Returns the predicted action and confidence score.
+
+#### **D. Database**
+
+- **SQLite (Development)**:
+  - Stores uploaded videos and metadata.
+- **PostgreSQL/MySQL (Production)**:
+  - Replaces SQLite in production for better performance and scalability.
+
+#### **E. Media Storage**
+
+- **`media/videos/`**:
+  - Stores uploaded video files.
+  - Accessed via the `MEDIA_URL` (e.g., `/media/videos/`).
+
+---
+
+### **5. PlantUML Diagrams**
+
+#### **A. System Context Diagram**
+
+```plantuml
+@startuml
+left to right direction
+
+actor User
+
+rectangle "Action Recognition System" {
+    usecase "Upload Video" as UC1
+    usecase "View Results" as UC2
+    usecase "Fetch Previous Results" as UC3
+}
+
+User --> UC1
+User --> UC2
+User --> UC3
+
+@enduml
+```
+
+#### **B. Component Diagram**
+
+```plantuml
+@startuml
+package "Frontend" {
+    [index.html] --> [results.html]
+    [index.html] --> [error.html]
+    [main.js] --> [index.html]
+}
+
+package "Backend" {
+    [views.py] --> [models.py]
+    [views.py] --> [forms.py]
+    [urls.py] --> [views.py]
+}
+
+package "Machine Learning" {
+    [utils.py] --> [mf.keras]
+}
+
+package "Database" {
+    [models.py] --> [db.sqlite3]
+}
+
+package "Media Storage" {
+    [media/videos/] --> [models.py]
+}
+
+@enduml
+```
+
+#### **C. Sequence Diagram**
+
+```plantuml
+@startuml
+actor User
+
+User -> "index.html": Upload Video
+"index.html" -> "views.py": POST /
+"views.py" -> "utils.py": extract_frames
+"utils.py" -> "mf.keras": predict_action
+"mf.keras" --> "utils.py": Action, Confidence
+"utils.py" --> "views.py": Action, Confidence
+"views.py" -> "models.py": Save Metadata
+"views.py" --> "results.html": Render Results
+
+User -> "results.html": View Results
+
+@enduml
+```
+
+---
+
+### **6. Summary**
+
+The system is a **modular Django application** with the following key components:
+
+1. **Frontend**: Handles user interaction and displays results.
+2. **Backend**: Manages video uploads, database storage, and API endpoints.
+3. **Machine Learning**: Processes video frames and predicts actions.
+4. **Database**: Stores uploaded videos and metadata.
+5. **Media Storage**: Stores uploaded video files.
+
+The system is designed to be scalable, with clear separation of concerns between the frontend, backend, and machine learning components.
+
+Let me know if you need further assistance!
