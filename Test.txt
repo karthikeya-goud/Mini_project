@@ -1,0 +1,168 @@
+import pandas as pd
+import random
+import numpy as np
+
+# Simulate Traffic Data (location, time of day, congestion level)
+locations = ['A', 'B', 'C', 'D', 'E']
+times_of_day = ['08:00', '12:00', '17:00', '20:00']
+congestion_levels = ['Low', 'Medium', 'High']
+
+traffic_data = []
+
+for loc in locations:
+    for time in times_of_day:
+        congestion = random.choice(congestion_levels)
+        traffic_data.append([loc, time, congestion])
+
+traffic_df = pd.DataFrame(traffic_data, columns=['Location', 'Time_of_Day', 'Congestion_Level'])
+
+# Simulate Demographic Data (location, population density, average age)
+demographic_data = []
+
+for loc in locations:
+    population_density = random.randint(500, 2000)  # people per square km
+    avg_age = random.randint(18, 60)  # average age of people
+    demographic_data.append([loc, population_density, avg_age])
+
+demographic_df = pd.DataFrame(demographic_data, columns=['Location', 'Population_Density', 'Avg_Age'])
+
+# Save datasets
+traffic_df.to_csv('traffic_data.csv', index=False)
+demographic_df.to_csv('demographic_data.csv', index=False)
+
+print("Simulated datasets for traffic and demographics have been generated.")
+
+
+
+
+
+from ortools.constraint_solver import routing_enums_pb2
+from ortools.constraint_solver import pywrapcp
+import pandas as pd
+import folium
+import numpy as np
+
+# Load the traffic and demographic data
+traffic_df = pd.read_csv('traffic_data.csv')
+demographic_df = pd.read_csv('demographic_data.csv')
+
+# Define locations (Latitude, Longitude) for simulation purposes
+locations_coordinates = {
+    'A': (40.748817, -73.985428),
+    'B': (40.758817, -73.985428),
+    'C': (40.748817, -73.975428),
+    'D': (40.758817, -73.975428),
+    'E': (40.768817, -73.985428)
+}
+
+locations = ['A', 'B', 'C', 'D', 'E']
+# Create a mock distance matrix between locations (simulated for this example)
+distance_matrix = [
+    [0, 10, 15, 20, 25],
+    [10, 0, 5, 15, 20],
+    [15, 5, 0, 10, 15],
+    [20, 15, 10, 0, 5],
+    [25, 20, 15, 5, 0]
+]
+
+# Function to create the data model for VRP
+def create_data_model():
+    data = {}
+    data['distance_matrix'] = distance_matrix
+    data['num_vehicles'] = 1  # Assume only one advertising vehicle for this model
+    data['depot'] = 0  # Starting point of the vehicle (location A)
+    return data
+
+# Function to solve VRP using Google OR-Tools
+def solve_vrp(data):
+    manager = pywrapcp.RoutingIndexManager(len(data['distance_matrix']), data['num_vehicles'], data['depot'])
+    routing = pywrapcp.RoutingModel(manager)
+    
+    # Create a transit callback
+    def distance_callback(from_index, to_index):
+        from_node = manager.IndexToNode(from_index)
+        to_node = manager.IndexToNode(to_index)
+        return data['distance_matrix'][from_node][to_node]
+
+    transit_callback_index = routing.RegisterTransitCallback(distance_callback)
+
+    routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
+    
+    # Search parameters
+    search_parameters = pywrapcp.DefaultRoutingSearchParameters()
+    search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+    
+    # Solve the problem
+    solution = routing.SolveWithParameters(search_parameters)
+    return solution, manager, routing
+
+# Get the solution and extract the optimized route
+data = create_data_model()
+solution, manager, routing = solve_vrp(data)
+
+# Extract the optimized route
+def get_route(solution, manager, routing):
+    route = []
+    index = routing.Start(0)
+    while not routing.IsEnd(index):
+        route.append(manager.IndexToNode(index))
+        index = solution.Value(routing.NextVar(index))
+    return route
+
+optimized_route = get_route(solution, manager, routing)
+print("Optimized Route:", optimized_route)
+
+# Visualize the optimized route on a map using folium
+ad_vehicle_map = folium.Map(location=[locations_coordinates[locations[0]][0], locations_coordinates[locations[0]][1]], zoom_start=13)
+
+# Plot the route on the map
+for i in range(len(optimized_route)-1):
+    start = locations_coordinates[locations[optimized_route[i]]]
+    end = locations_coordinates[locations[optimized_route[i+1]]]
+    folium.Marker([start[0], start[1]], popup=f"Start {i}").add_to(ad_vehicle_map)
+    folium.Marker([end[0], end[1]], popup=f"End {i+1}").add_to(ad_vehicle_map)
+
+ad_vehicle_map.save('optimized_route_map.html')
+
+
+
+
+
+
+# Predict ad relevance based on demographic data
+def predict_ad_relevance(location, population_density, avg_age):
+    # Simple heuristic: more population density + younger age = more relevance
+    relevance_score = population_density * (40 - abs(avg_age - 30))  # Assuming 30 is the target age
+    return relevance_score
+
+# Apply relevance prediction for each location
+demographic_df['Ad_Relevance_Score'] = demographic_df.apply(
+    lambda row: predict_ad_relevance(row['Location'], row['Population_Density'], row['Avg_Age']), axis=1)
+
+# Rank locations by relevance score (higher is better)
+demographic_df = demographic_df.sort_values(by='Ad_Relevance_Score', ascending=False)
+
+# Display the top locations for ad targeting
+print("Top locations for ad targeting:")
+print(demographic_df[['Location', 'Ad_Relevance_Score']].head())
+
+
+
+
+
+
+
+import matplotlib.pyplot as plt
+
+# Plot ad relevance score by location
+plt.bar(demographic_df['Location'], demographic_df['Ad_Relevance_Score'])
+plt.xlabel('Location')
+plt.ylabel('Ad Relevance Score')
+plt.title('Ad Relevance by Location')
+plt.show()
+
+
+
+
+
+
