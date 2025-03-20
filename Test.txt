@@ -131,3 +131,19 @@ plt.xlabel('Location')
 plt.ylabel('Ad Relevance Score')
 plt.title('Ad Relevance by Location')
 plt.show()
+
+
+
+
+
+
+for i in range(len(optimized_route)-1):
+    start = locations[optimized_route[i]]
+    end = locations[optimized_route[i+1]]
+    folium.Marker([locations_coordinates[start][0], locations_coordinates[start][1]], popup=f"Start {i}").add_to(ad_vehicle_map)
+    folium.Marker([locations_coordinates[end][0], locations_coordinates[end][1]], popup=f"End {i+1}").add_to(ad_vehicle_map)
+
+
+
+ad_vehicle_map.save('optimized_route_map.html')
+print("Optimized route map has been saved.")
