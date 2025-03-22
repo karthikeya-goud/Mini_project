@@ -1,0 +1,129 @@
+import numpy as np
+import random
+import pandas as pd
+import matplotlib.pyplot as plt
+import pickle
+
+# Step 1: Simulate the environment (locations, traffic conditions, ad types)
+locations = [
+    {"Location ID": 1, "Latitude": 40.7128, "Longitude": -74.0060},  # New York
+    {"Location ID": 2, "Latitude": 34.0522, "Longitude": -118.2437},  # Los Angeles
+    {"Location ID": 3, "Latitude": 51.5074, "Longitude": -0.1278},  # London
+    {"Location ID": 4, "Latitude": 48.8566, "Longitude": 2.3522},  # Paris
+    {"Location ID": 5, "Latitude": 35.6762, "Longitude": 139.6503},  # Tokyo
+]
+
+traffic_conditions = ["Low", "Medium", "High"]
+ad_types = ["Banner", "Video", "Interactive"]
+times_of_day = ["Morning", "Afternoon", "Evening"]
+
+# Simulate ad engagement based on traffic and ad type
+def simulate_engagement(traffic_condition, ad_type):
+    traffic_factor = {"Low": 1, "Medium": 2, "High": 3}
+    ad_factor = {"Banner": 1, "Video": 2, "Interactive": 3}
+    base_engagement = random.uniform(1, 5)  # Base engagement between 1 and 5
+    return base_engagement * traffic_factor[traffic_condition] * ad_factor[ad_type] / 10
+
+# Q-learning Setup
+class QLearningAgent:
+    def __init__(self, actions, alpha=0.1, gamma=0.9, epsilon=0.1):
+        self.actions = actions  # Possible ad types (actions)
+        self.alpha = alpha  # Learning rate
+        self.gamma = gamma  # Discount factor
+        self.epsilon = epsilon  # Exploration rate
+        self.q_table = {}  # Q-table to store action-value pairs
+
+    def get_state(self, location, traffic_condition, time_of_day):
+        return (location, traffic_condition, time_of_day)
+
+    def get_action(self, state):
+        if state not in self.q_table:
+            self.q_table[state] = {action: 0 for action in self.actions}  # Initialize Q-values for the state
+        
+        # Exploration-exploitation tradeoff (epsilon-greedy)
+        if random.uniform(0, 1) < self.epsilon:
+            return random.choice(self.actions)  # Explore: pick a random action
+        else:
+            # Exploit: pick the action with the highest Q-value
+            return max(self.q_table[state], key=self.q_table[state].get)
+
+    def update_q_value(self, state, action, reward, next_state):
+        if next_state not in self.q_table:
+            self.q_table[next_state] = {action: 0 for action in self.actions}
+        # Q-learning update rule
+        best_next_action = max(self.q_table[next_state], key=self.q_table[next_state].get)
+        td_target = reward + self.gamma * self.q_table[next_state][best_next_action]
+        self.q_table[state][action] = self.q_table[state][action] + self.alpha * (td_target - self.q_table[state][action])
+
+# Step 2: Train the RL agent
+
+# Create the agent (Vehicle)
+agent = QLearningAgent(actions=ad_types)
+
+# Simulate the vehicle journey and train the agent
+n_episodes = 1000
+for episode in range(n_episodes):
+    # Randomly choose start and end locations for each episode
+    route = random.sample([loc["Location ID"] for loc in locations], k=random.randint(3, 5))
+    
+    # Simulate the journey
+    for i in range(len(route) - 1):
+        location = route[i]
+        next_location = route[i + 1]
+        
+        # Random traffic condition and time of day
+        traffic_condition = random.choice(traffic_conditions)
+        time_of_day = random.choice(times_of_day)
+        
+        # Get the current state
+        state = agent.get_state(location, traffic_condition, time_of_day)
+        
+        # Get the best action (ad type) to take
+        action = agent.get_action(state)
+        
+        # Simulate the reward (ad engagement)
+        engagement_rate = simulate_engagement(traffic_condition, action)
+        
+        # Get the next state (next location's traffic condition and time of day)
+        next_traffic_condition = random.choice(traffic_conditions)
+        next_time_of_day = random.choice(times_of_day)
+        next_state = agent.get_state(next_location, next_traffic_condition, next_time_of_day)
+        
+        # Update Q-value based on reward
+        agent.update_q_value(state, action, engagement_rate, next_state)
+
+# Step 3: Save the trained model (Q-table)
+with open("q_learning_model.pkl", "wb") as f:
+    pickle.dump(agent.q_table, f)
+
+# Step 4: Testing the trained model with real-time data
+# Load the trained model
+with open("q_learning_model.pkl", "rb") as f:
+    q_table = pickle.load(f)
+
+# Real-time test (predict engagement for a new journey)
+test_location = 1  # New York
+test_traffic_condition = "Medium"
+test_time_of_day = "Morning"
+
+# Test the agent with a specific state (ad placement prediction)
+state = (test_location, test_traffic_condition, test_time_of_day)
+action = max(q_table[state], key=q_table[state].get)  # Get the action (ad type) with the highest Q-value
+
+print(f"Recommended Ad Type for Location {test_location} at {test_traffic_condition} traffic in the {test_time_of_day}: {action}")
+
+# Step 5: Visualization (Graphs and Diagrams)
+
+# Plot the number of times each ad type was chosen in training (exploitation vs exploration)
+action_counts = {action: 0 for action in ad_types}
+for state in q_table:
+    for action in q_table[state]:
+        if q_table[state][action] > 0:
+            action_counts[action] += 1
+
+plt.bar(action_counts.keys(), action_counts.values())
+plt.title("Ad Type Frequency in Training (Exploration/Exploitation)")
+plt.xlabel("Ad Type")
+plt.ylabel("Frequency")
+plt.show()
+
